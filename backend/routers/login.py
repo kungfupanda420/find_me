@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request, Form, UploadFile, File
 from sqlalchemy.orm import Session
 from fastapi.responses import RedirectResponse
 from schemas.token import Token
@@ -175,6 +175,64 @@ async def change_password(request: ChangePasswordRequest, db: Session = Depends(
     db.refresh(user)    
     return {"msg": "Password changed successfully"}
 
+
+@router.post('/register')
+async def register_normal_user(
+    email: str = Form(...),
+    password: str = Form(...),
+    name: str = Form(...),
+    profile_photo: UploadFile = File(None),  # Make it optional
+    db: Session = Depends(get_db)
+):
+    # Check if user exists
+    user = db.query(User).filter(User.email == email).first()
+    if user:
+        raise HTTPException(status_code=400, detail="User with this email already exists")
+    
+    # Handle profile photo upload
+    profile_photo_path = None
+    if profile_photo:
+        # Validate file type
+        allowed_content_types = ['image/jpeg', 'image/png', 'image/gif']
+        if profile_photo.content_type not in allowed_content_types:
+            raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, and GIF are allowed.")
+        
+        # Generate unique filename
+        file_extension = profile_photo.filename.split('.')[-1]
+        filename = f"{email}_{int(datetime.now().timestamp())}.{file_extension}"
+        file_path = os.path.join(PROFILE_PHOTOS_DIR, filename)
+        
+        # Save file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(profile_photo.file, buffer)
+        
+        profile_photo_path = file_path
+    
+    # Create user
+    hashed_password = pwd_context.hash(password)
+    new_user = User(
+        email=email,
+        password=hashed_password,
+        name=name,  # Add name
+        profile_photo=profile_photo_path,  # Add profile photo path
+        role="Verified Email"
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # Create normal_user entry
+    normal_user_entry = normal_user(id=new_user.id)
+    db.add(normal_user_entry)
+    db.commit()
+    
+    return {
+        "msg": "User registered successfully", 
+        "user_id": new_user.id, 
+        "email": new_user.email,
+        "name": new_user.name,
+        "profile_photo": new_user.profile_photo
+    }
 # Additional endpoints for user type checking
 @router.get('/user/{user_id}/type')
 def get_user_type(user_id: int, db: Session = Depends(get_db)):

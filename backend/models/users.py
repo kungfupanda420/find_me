@@ -11,6 +11,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True)
     password = Column(String(255))
+    name=Column(String(255))
+    profile_photo=Column(String(255),nullable=True)
     role = Column(String(255), index=True)
 
     # Relationships
@@ -22,6 +24,8 @@ class normal_user(Base):
     __tablename__ = "normal_users"
 
     id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    name=Column(String(255))
+    profile_photo=Column(String(255),nullable=True)
     user = relationship("User", back_populates="normal_user")
 
 
