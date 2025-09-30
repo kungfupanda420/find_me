@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from fastapi.responses import RedirectResponse
 from schemas.token import Token
 from schemas.login import UserLogin, ForgotPasswordRequest, ChangePasswordRequest
-from models.users import User, normal_user, Admin
+from models.users import User, Admin
 # from models.rounds import Round
 from security.JWTtoken import create_access_token, create_refresh_token, verify_access_token
 from database import get_db
@@ -21,7 +21,8 @@ from google.auth.transport import requests as google_requests
 import os
 from dotenv import load_dotenv
 
-from datetime import timedelta
+from datetime import timedelta, datetime
+import shutil
 
 from urllib.parse import urlencode
 
@@ -41,6 +42,10 @@ get_db = get_db
 load_dotenv()
 
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+
+# Define profile photos directory
+PROFILE_PHOTOS_DIR = "profile_photos"
+os.makedirs(PROFILE_PHOTOS_DIR, exist_ok=True)
 
 conf = ConnectionConfig(
     MAIL_USERNAME='pratheek18183@gmail.com',
@@ -89,11 +94,7 @@ async def google_login(request: Request, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
         db.refresh(user)
-        
-        # Create normal_user entry for the new user
-        normal_user_entry = normal_user(id=user.id)
-        db.add(normal_user_entry)
-        db.commit()
+        # No need to create normal_user entry anymore
 
     access_token = create_access_token(data={"sub": user.email})
     refresh_token = create_refresh_token(data={"sub": user.email})
@@ -177,7 +178,7 @@ async def change_password(request: ChangePasswordRequest, db: Session = Depends(
 
 
 @router.post('/register')
-async def register_normal_user(
+async def register(
     email: str = Form(...),
     password: str = Form(...),
     name: str = Form(...),
@@ -221,10 +222,7 @@ async def register_normal_user(
     db.commit()
     db.refresh(new_user)
     
-    # Create normal_user entry
-    normal_user_entry = normal_user(id=new_user.id)
-    db.add(normal_user_entry)
-    db.commit()
+    # No need to create normal_user entry anymore
     
     return {
         "msg": "User registered successfully", 
@@ -233,7 +231,8 @@ async def register_normal_user(
         "name": new_user.name,
         "profile_photo": new_user.profile_photo
     }
-# Additional endpoints for user type checking
+
+# Updated endpoints for user type checking
 @router.get('/user/{user_id}/type')
 def get_user_type(user_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
@@ -245,12 +244,8 @@ def get_user_type(user_id: int, db: Session = Depends(get_db)):
     if admin:
         return {"user_type": "admin", "user_id": user_id}
     
-    # Check if user is a normal user
-    normal_user_entry = db.query(normal_user).filter(normal_user.id == user_id).first()
-    if normal_user_entry:
-        return {"user_type": "normal_user", "user_id": user_id}
-    
-    return {"user_type": "unknown", "user_id": user_id}
+    # If not admin, it's a regular user
+    return {"user_type": "user", "user_id": user_id}
 
 # Endpoint to promote a user to admin
 @router.post('/user/{user_id}/promote-to-admin')
@@ -264,14 +259,27 @@ def promote_to_admin(user_id: int, db: Session = Depends(get_db)):
     if existing_admin:
         raise HTTPException(status_code=400, detail="User is already an admin")
     
-    # Remove from normal_user if exists
-    normal_user_entry = db.query(normal_user).filter(normal_user.id == user_id).first()
-    if normal_user_entry:
-        db.delete(normal_user_entry)
-    
     # Add to admin
     admin_entry = Admin(user_id=user_id)
     db.add(admin_entry)
     db.commit()
     
     return {"msg": f"User {user_id} promoted to admin successfully"}
+
+# Endpoint to demote an admin to regular user
+@router.post('/user/{user_id}/demote-to-user')
+def demote_to_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if user is an admin
+    admin_entry = db.query(Admin).filter(Admin.user_id == user_id).first()
+    if not admin_entry:
+        raise HTTPException(status_code=400, detail="User is not an admin")
+    
+    # Remove from admin
+    db.delete(admin_entry)
+    db.commit()
+    
+    return {"msg": f"User {user_id} demoted to regular user successfully"}

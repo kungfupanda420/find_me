@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from database import engine
-from routers import login, auth,admin
+from routers import login, auth,admin,room
 import models
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +36,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  #getting
 app.include_router(auth.router)
 app.include_router(login.router)
 app.include_router(admin.router)
+app.include_router(room.router)
 # app.include_router(students.router)
 # app.include_router(professors.router)
 # app.include_router(departments.router)

@@ -7,3 +7,4 @@ routers/__pycache__
 schemas/__pycache__
 security/__pycache__
 tasks/__pycache__
+/profile_photos
