@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+import secrets
+import string
 from database import get_db
 from models.users import User, Room, RoomMember
 from schemas.room import RoomCreate, RoomResponse, RoomUpdate, RoomWithMembersResponse
@@ -12,8 +14,11 @@ router = APIRouter(
     tags=["Rooms"]
 )
 
+def generate_room_code(length=6):
+    """Generate a random alphanumeric room code"""
+    characters = string.ascii_uppercase + string.digits
+    return ''.join(secrets.choice(characters) for _ in range(length))
 
-get_db = get_db
 @router.post("/create_room", response_model=RoomResponse)
 def create_room(
     room_data: RoomCreate,
@@ -21,22 +26,22 @@ def create_room(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Create a new room
+    Create a new room with a random 6-digit code
     """
-    # Check if room name already exists
-    existing_room = db.query(Room).filter(Room.name == room_data.name).first()
-    if existing_room:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Room name already exists"
-        )
+    # Generate unique room code
+    while True:
+        room_code = generate_room_code()
+        existing_room = db.query(Room).filter(Room.code == room_code).first()
+        if not existing_room:
+            break
     
     # Create new room
     new_room = Room(
         name=room_data.name,
         description=room_data.description,
         max_members=room_data.max_members,
-        created_by=current_user.id
+        created_by=current_user.id,
+        code=room_code
     )
     
     db.add(new_room)
@@ -193,20 +198,20 @@ def update_room(
     
     return room
 
-@router.post("/rooms/{room_id}/join")
-def join_room(
-    room_id: int,
+@router.post("/join/{room_code}")
+def join_room_by_code(
+    room_code: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Join a room
+    Join a room using 6-digit room code
     """
-    room = db.query(Room).filter(Room.id == room_id).first()
+    room = db.query(Room).filter(Room.code == room_code.upper()).first()
     if not room:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Room not found"
+            detail="Room not found with this code"
         )
     
     if not room.is_active:
@@ -217,7 +222,7 @@ def join_room(
     
     # Check if user is already a member
     existing_member = db.query(RoomMember).filter(
-        RoomMember.room_id == room_id,
+        RoomMember.room_id == room.id,
         RoomMember.user_id == current_user.id
     ).first()
     
@@ -229,7 +234,7 @@ def join_room(
     
     # Check if room has reached maximum members
     current_member_count = db.query(RoomMember).filter(
-        RoomMember.room_id == room_id
+        RoomMember.room_id == room.id
     ).count()
     
     if current_member_count >= room.max_members:
@@ -240,7 +245,7 @@ def join_room(
     
     # Add user as room member
     new_member = RoomMember(
-        room_id=room_id,
+        room_id=room.id,
         user_id=current_user.id,
         role="member"
     )
@@ -248,7 +253,11 @@ def join_room(
     db.add(new_member)
     db.commit()
     
-    return {"message": "Successfully joined the room"}
+    return {
+        "message": "Successfully joined the room",
+        "room_id": room.id,
+        "room_name": room.name
+    }
 
 @router.delete("/rooms/{room_id}/leave")
 def leave_room(
@@ -257,7 +266,7 @@ def leave_room(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Leave a room
+    Leave a room (for room members)
     """
     membership = db.query(RoomMember).filter(
         RoomMember.room_id == room_id,
@@ -291,3 +300,41 @@ def leave_room(
     db.commit()
     
     return {"message": "Successfully left the room"}
+
+@router.delete("/rooms/{room_id}")
+def delete_room(
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a room (only room owner can delete)
+    """
+    # Check if user is the owner of the room
+    membership = db.query(RoomMember).filter(
+        RoomMember.room_id == room_id,
+        RoomMember.user_id == current_user.id,
+        RoomMember.role == "owner"
+    ).first()
+    
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only room owner can delete the room"
+        )
+    
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+    
+    # Delete all room members first (due to foreign key constraints)
+    db.query(RoomMember).filter(RoomMember.room_id == room_id).delete()
+    
+    # Delete the room
+    db.delete(room)
+    db.commit()
+    
+    return {"message": "Room deleted successfully"}

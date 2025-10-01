@@ -27,21 +27,22 @@ class Admin(Base):
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     user = relationship("User", back_populates="admin")
 
+# In models.users.py, update the Room class:
 class Room(Base):
     __tablename__ = "rooms"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    code = Column(String(6), unique=True, index=True, nullable=False)  # Add this line
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
-    max_members = Column(Integer, default=10)  # Maximum members allowed
+    max_members = Column(Integer, default=10)
     
     # Relationships
     creator = relationship("User", back_populates="created_rooms")
     members = relationship("RoomMember", back_populates="room")
-
 class RoomMember(Base):
     __tablename__ = "room_members"
 

@@ -18,6 +18,7 @@ class RoomUpdate(BaseModel):
 
 class RoomResponse(RoomBase):
     id: int
+    code: str
     created_by: int
     created_at: datetime
     is_active: bool
@@ -42,3 +43,31 @@ class RoomWithMembersResponse(RoomResponse):
     
     class Config:
         from_attributes = True
+
+class JoinRoomResponse(BaseModel):
+    message: str
+    room_id: int
+    room_name: str
+
+class LeaveRoomResponse(BaseModel):
+    message: str
+
+class DeleteRoomResponse(BaseModel):
+    message: str
+
+# Additional schemas for room operations
+class RoomJoinRequest(BaseModel):
+    room_code: str
+
+class RoomInviteResponse(BaseModel):
+    room_code: str
+    room_name: str
+    invite_url: Optional[str] = None
+
+class RoomStatsResponse(BaseModel):
+    room_id: int
+    room_name: str
+    total_members: int
+    max_members: int
+    created_at: datetime
+    is_active: bool
